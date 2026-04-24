@@ -26,11 +26,13 @@ type Notification = {
 
 export function TopNavbar() {
   const { user, logout } = useAuth()
+  const isAdmin = user?.role === "admin"
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
 
-  // ─── Build real notifications from Asterisk ───────────────────────────────
+  // ─── Build real notifications from Asterisk (admin only) ─────────────────
   const fetchNotifications = async () => {
+    if (!isAdmin) return
     const notifs: Notification[] = []
 
     try {
@@ -104,10 +106,12 @@ export function TopNavbar() {
   }
 
   useEffect(() => {
-    fetchNotifications()
-    const interval = setInterval(fetchNotifications, 10000)
-    return () => clearInterval(interval)
-  }, [])
+    if (isAdmin) {
+      fetchNotifications()
+      const interval = setInterval(fetchNotifications, 10000)
+      return () => clearInterval(interval)
+    }
+  }, [isAdmin])
 
   const dismissNotification = (id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id))
@@ -149,67 +153,69 @@ export function TopNavbar() {
           />
         </div>
 
-        {/* Notifications */}
-        <div className="relative">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="relative text-primary-foreground hover:bg-primary-foreground/10"
-            onClick={() => setShowNotifications(!showNotifications)}
-          >
-            <Bell className="h-5 w-5" />
-            {notifications.length > 0 && (
-              <Badge className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive p-0 text-[10px] text-primary-foreground">
-                {notifications.length}
-              </Badge>
-            )}
-          </Button>
+        {/* Notifications — Admin only */}
+        {isAdmin && (
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="relative text-primary-foreground hover:bg-primary-foreground/10"
+              onClick={() => setShowNotifications(!showNotifications)}
+            >
+              <Bell className="h-5 w-5" />
+              {notifications.length > 0 && (
+                <Badge className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive p-0 text-[10px] text-primary-foreground">
+                  {notifications.length}
+                </Badge>
+              )}
+            </Button>
 
-          {/* Notifications Dropdown */}
-          {showNotifications && (
-            <div className="absolute right-0 top-12 w-80 rounded-xl border border-border bg-card shadow-xl z-50">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                <p className="text-sm font-semibold text-foreground">
-                  Notifications ({notifications.length})
-                </p>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={() => setShowNotifications(false)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-              <div className="flex flex-col gap-2 p-3 max-h-80 overflow-y-auto">
-                {notifications.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No notifications
+            {/* Notifications Dropdown */}
+            {showNotifications && (
+              <div className="absolute right-0 top-12 w-80 rounded-xl border border-border bg-card shadow-xl z-50">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                  <p className="text-sm font-semibold text-foreground">
+                    Notifications ({notifications.length})
                   </p>
-                ) : (
-                  notifications.map(n => (
-                    <div
-                      key={n.id}
-                      className={`flex items-start justify-between gap-2 rounded-lg border p-3 text-xs ${notifColor(n.type)}`}
-                    >
-                      <div>
-                        <p className="font-semibold">{n.title}</p>
-                        <p className="mt-0.5 opacity-80">{n.message}</p>
-                        <p className="mt-1 opacity-60">{n.time}</p>
-                      </div>
-                      <button
-                        onClick={() => dismissNotification(n.id)}
-                        className="opacity-60 hover:opacity-100 shrink-0"
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={() => setShowNotifications(false)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex flex-col gap-2 p-3 max-h-80 overflow-y-auto">
+                  {notifications.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No notifications
+                    </p>
+                  ) : (
+                    notifications.map(n => (
+                      <div
+                        key={n.id}
+                        className={`flex items-start justify-between gap-2 rounded-lg border p-3 text-xs ${notifColor(n.type)}`}
                       >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ))
-                )}
+                        <div>
+                          <p className="font-semibold">{n.title}</p>
+                          <p className="mt-0.5 opacity-80">{n.message}</p>
+                          <p className="mt-1 opacity-60">{n.time}</p>
+                        </div>
+                        <button
+                          onClick={() => dismissNotification(n.id)}
+                          className="opacity-60 hover:opacity-100 shrink-0"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

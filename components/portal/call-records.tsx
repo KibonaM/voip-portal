@@ -23,34 +23,44 @@ type CallRecord = {
 }
 
 export function CallRecords() {
-  const [search, setSearch] = useState("")
+  const [search, setSearch]         = useState("")
   const [typeFilter, setTypeFilter] = useState("all")
-  const [records, setRecords] = useState<CallRecord[]>([])
+  const [records, setRecords]       = useState<CallRecord[]>([])
   const [activeCalls, setActiveCalls] = useState<CallRecord[]>([])
   const [lastRefresh, setLastRefresh] = useState("—")
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading]       = useState(true)
 
-  // ─── Fetch live active calls ──────────────────────────────────────────────
-  const fetchLiveCalls = async () => {
+  const fetchAll = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${ASTERISK_API}/cdr`)
-      const data = await res.json()
-      if (Array.isArray(data)) setActiveCalls(data)
+      // Fetch live active calls
+      const liveRes = await fetch(`${ASTERISK_API}/cdr`)
+      const liveData = await liveRes.json()
+      if (Array.isArray(liveData)) setActiveCalls(liveData)
     } catch {
       setActiveCalls([])
     }
+
+    try {
+      // Fetch real historical CDR from Asterisk CSV
+      const cdrRes = await fetch(`${ASTERISK_API}/realcdr`)
+      const cdrData = await cdrRes.json()
+      if (Array.isArray(cdrData)) setRecords(cdrData)
+    } catch {
+      setRecords([])
+    }
+
     setLastRefresh(new Date().toLocaleTimeString())
     setLoading(false)
   }
 
   useEffect(() => {
-    fetchLiveCalls()
-    const interval = setInterval(fetchLiveCalls, 5000)
+    fetchAll()
+    const interval = setInterval(fetchAll, 5000)
     return () => clearInterval(interval)
   }, [])
 
-  // ─── Combine live + historical records ───────────────────────────────────
+  // Combine live + historical
   const allRecords = [
     ...activeCalls.map(c => ({ ...c, type: "Active" })),
     ...records,
@@ -66,12 +76,12 @@ export function CallRecords() {
     return matchesSearch && matchesType
   })
 
-  const missed  = allRecords.filter(r => r.type === "Missed").length
-  const total   = allRecords.length
+  const missed = allRecords.filter(r => r.type === "Missed").length
+  const total  = allRecords.length
 
-  // ─── Export CSV ───────────────────────────────────────────────────────────
+  // Export CSV
   const exportCSV = () => {
-    const headers = ["Date/Time","Caller","Caller Name","Callee","Callee Name","Duration","Type","Network"]
+    const headers = ["Date/Time", "Caller", "Caller Name", "Callee", "Callee Name", "Duration", "Type", "Network"]
     const rows = filtered.map(r => [
       r.dateTime, r.caller, r.callerName, r.callee, r.calleeName, r.duration, r.type, r.networkOrigin
     ])
@@ -80,7 +90,7 @@ export function CallRecords() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `udsm-cdr-${new Date().toISOString().slice(0,10)}.csv`
+    a.download = `udsm-cdr-${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
   }
 
@@ -94,7 +104,7 @@ export function CallRecords() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={fetchLiveCalls}>
+          <Button variant="outline" size="sm" onClick={fetchAll}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
@@ -107,9 +117,9 @@ export function CallRecords() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <KpiCard title="Total Records"    value={total}              icon={PhoneCall}  trend="Historical + Live" trendUp />
-        <KpiCard title="Active Now"       value={activeCalls.length} icon={Clock}      trend="Live from Asterisk" trendUp />
-        <KpiCard title="Missed Calls"     value={missed}             icon={PhoneMissed} trend={`${Math.round((missed/total)*100) || 0}% miss rate`} trendUp={false} />
+        <KpiCard title="Total Records" value={total}              icon={PhoneCall}   trend="Historical + Live" trendUp />
+        <KpiCard title="Active Now"    value={activeCalls.length} icon={Clock}       trend="Live from Asterisk" trendUp />
+        <KpiCard title="Missed Calls"  value={missed}             icon={PhoneMissed} trend={`${Math.round((missed / (total || 1)) * 100)}% miss rate`} trendUp={false} />
       </div>
 
       {/* Active Calls Banner */}
@@ -150,59 +160,72 @@ export function CallRecords() {
       {/* CDR Table */}
       <Card className="border border-border">
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border bg-muted/50">
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date/Time</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Caller</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Callee</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Network</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((record) => (
-                  <tr key={record.id} className={`border-b border-border last:border-0 hover:bg-muted/30 transition-colors ${record.type === "Active" ? "bg-green-500/5" : ""}`}>
-                    <td className="px-4 py-3 text-sm text-muted-foreground">{record.dateTime}</td>
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{record.callerName}</p>
-                        <p className="text-xs text-muted-foreground font-mono">{record.caller}</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{record.calleeName}</p>
-                        <p className="text-xs text-muted-foreground font-mono">{record.callee}</p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm font-mono text-foreground">{record.duration}</td>
-                    <td className="px-4 py-3">
-                      <StatusBadge
-                        label={record.type}
-                        variant={
-                          record.type === "Active"   ? "success"
-                          : record.type === "Missed"   ? "danger"
-                          : record.type === "Inbound"  ? "info"
-                          : record.type === "Outbound" ? "warning"
-                          : "neutral"
-                        }
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge
-                        label={record.networkOrigin}
-                        variant={record.networkOrigin === "LAN" ? "info" : "warning"}
-                        dot={false}
-                      />
-                    </td>
+          {loading ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">
+              Loading call records from Asterisk...
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="p-8 text-center text-sm text-muted-foreground">
+              No call records yet. Records will appear here after calls are made.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border bg-muted/50">
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Date/Time</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Caller</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Callee</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Type</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Network</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filtered.map((record) => (
+                    <tr
+                      key={record.id}
+                      className={`border-b border-border last:border-0 hover:bg-muted/30 transition-colors ${record.type === "Active" ? "bg-green-500/5" : ""}`}
+                    >
+                      <td className="px-4 py-3 text-sm text-muted-foreground">{record.dateTime}</td>
+                      <td className="px-4 py-3">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{record.callerName}</p>
+                          <p className="text-xs text-muted-foreground font-mono">{record.caller}</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{record.calleeName}</p>
+                          <p className="text-xs text-muted-foreground font-mono">{record.callee}</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm font-mono text-foreground">{record.duration}</td>
+                      <td className="px-4 py-3">
+                        <StatusBadge
+                          label={record.type}
+                          variant={
+                            record.type === "Active"   ? "success"
+                            : record.type === "Missed"   ? "danger"
+                            : record.type === "Inbound"  ? "info"
+                            : record.type === "Outbound" ? "warning"
+                            : "neutral"
+                          }
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusBadge
+                          label={record.networkOrigin ?? "LAN"}
+                          variant={record.networkOrigin === "WAN" ? "warning" : "info"}
+                          dot={false}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

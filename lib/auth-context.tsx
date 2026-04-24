@@ -12,6 +12,7 @@ export interface User {
   role: UserRole
   department: string
   extension: string
+  mustChangePassword?: boolean
 }
 
 interface AuthContextType {
@@ -44,13 +45,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (res.ok && data.user) {
         setUser({
-          id:         data.user.id,
-          name:       data.user.name,
-          email:      data.user.email,
-          role:       data.user.role as UserRole,
-          department: data.user.department,
-          extension:  data.user.extension,
-        })
+  id:                 data.user.id,
+  name:               data.user.name,
+  email:              data.user.email,
+  role:               data.user.role as UserRole,
+  department:         data.user.department,
+  extension:          data.user.extension,
+  mustChangePassword: data.user.mustChangePassword ?? false,
+})
         setFailedAttempts(0)
         return true
       }

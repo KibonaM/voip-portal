@@ -29,29 +29,43 @@ type User = {
   lastLogin: string
   online?: boolean
   password?: string
+  mustChangePassword?: boolean
 }
 
 export function UserManagement() {
   const [search, setSearch]           = useState("")
   const [deptFilter, setDeptFilter]   = useState("all")
   const [showModal, setShowModal]     = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingUser, setEditingUser] = useState<User | null>(null)
   const [usersList, setUsersList]     = useState<User[]>([])
   const [loading, setLoading]         = useState(false)
+  const [editLoading, setEditLoading] = useState(false)
   const [pageLoading, setPageLoading] = useState(true)
   const [error, setError]             = useState("")
   const [success, setSuccess]         = useState("")
+  const [editError, setEditError]     = useState("")
+  const [editSuccess, setEditSuccess] = useState("")
+  const [generatedPassword, setGeneratedPassword] = useState("")
   const [lastRefresh, setLastRefresh] = useState("—")
 
   const [form, setForm] = useState({
-    name: "",
-    email: "",
-    department: "",
-    role: "user",
-    extension: "",
-    remoteAccess: false,
+    name: "", email: "", department: "", role: "user", extension: "", remoteAccess: false,
   })
 
-  // ─── Load users from server ───────────────────────────────────────────────
+  const [editForm, setEditForm] = useState({
+    name: "", email: "", department: "", role: "user",
+  })
+
+  // ─── Generate strong password ─────────────────────────────────────────────
+  const generatePassword = (extension: string) => {
+    const randomNum = Math.floor(1000 + Math.random() * 9000)
+    const specials  = ["@", "#", "!", "$", "%"]
+    const special   = specials[Math.floor(Math.random() * specials.length)]
+    return `UDSM${special}${extension}#${randomNum}`
+  }
+
+  // ─── Load users ───────────────────────────────────────────────────────────
   const loadUsers = async () => {
     setPageLoading(true)
     try {
@@ -64,7 +78,7 @@ export function UserManagement() {
     setPageLoading(false)
   }
 
-  // ─── Sync online status from Asterisk ────────────────────────────────────
+  // ─── Sync online status ───────────────────────────────────────────────────
   const syncOnlineStatus = async () => {
     const endpoints = await fetchLiveEndpoints()
     if (endpoints) {
@@ -82,14 +96,17 @@ export function UserManagement() {
     return () => clearInterval(interval)
   }, [])
 
-  // ─── Fetch next extension number ─────────────────────────────────────────
+  // ─── Fetch next extension ─────────────────────────────────────────────────
   const fetchNextExtension = async () => {
     try {
       const res = await fetch(`${ASTERISK_API}/nextextension`)
       const data = await res.json()
-      setForm(f => ({ ...f, extension: data.next }))
+      const ext = data.next
+      setForm(f => ({ ...f, extension: ext }))
+      setGeneratedPassword(generatePassword(ext))
     } catch {
-      setForm(f => ({ ...f, extension: "1009" }))
+      setForm(f => ({ ...f, extension: "1005" }))
+      setGeneratedPassword(generatePassword("1005"))
     }
   }
 
@@ -106,27 +123,78 @@ export function UserManagement() {
   const onlineUsers    = usersList.filter(u => u.online).length
   const suspendedUsers = usersList.filter(u => u.status === "suspended").length
 
+  // ─── Open Edit Modal ──────────────────────────────────────────────────────
+  const openEdit = (user: User) => {
+    setEditingUser(user)
+    setEditForm({
+      name:       user.name,
+      email:      user.email,
+      department: user.department,
+      role:       user.role,
+    })
+    setEditError("")
+    setEditSuccess("")
+    setShowEditModal(true)
+  }
+
+  // ─── Save Edit ────────────────────────────────────────────────────────────
+  const handleSaveEdit = async () => {
+    if (!editForm.name || !editForm.email) {
+      setEditError("Name and email are required")
+      return
+    }
+    setEditLoading(true)
+    setEditError("")
+    try {
+      const res = await fetch(`${ASTERISK_API}/users/${editingUser?.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name:       editForm.name,
+          email:      editForm.email,
+          department: editForm.department,
+          role:       editForm.role,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setEditError(data.error || "Failed to update user")
+      } else {
+        setUsersList(prev =>
+          prev.map(u => u.id === editingUser?.id
+            ? { ...u, name: editForm.name, email: editForm.email, department: editForm.department, role: editForm.role }
+            : u
+          )
+        )
+        setEditSuccess("✅ User updated successfully!")
+        setTimeout(() => {
+          setShowEditModal(false)
+          setEditSuccess("")
+        }, 1500)
+      }
+    } catch {
+      setEditError("Cannot connect to server.")
+    }
+    setEditLoading(false)
+  }
+
   // ─── Create User ──────────────────────────────────────────────────────────
   const handleCreateUser = async () => {
     if (!form.name || !form.email || !form.department) {
       setError("Please fill in all required fields")
       return
     }
-
     setLoading(true)
     setError("")
     setSuccess("")
-
     try {
-      const password = `UDSM@${form.extension}`
+      const password = generatedPassword || generatePassword(form.extension)
 
-      // 1. Create extension on Asterisk
       const extRes = await fetch(`${ASTERISK_API}/extensions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ extension: form.extension, password }),
       })
-
       const extData = await extRes.json()
       if (!extRes.ok) {
         setError(extData.error || "Failed to create extension on Asterisk")
@@ -134,7 +202,6 @@ export function UserManagement() {
         return
       }
 
-      // 2. Save user to persistent server storage
       const newUser: User = {
         id: String(Date.now()),
         name: form.name,
@@ -145,7 +212,8 @@ export function UserManagement() {
         status: "active",
         lastLogin: new Date().toISOString().slice(0, 16).replace("T", " "),
         online: false,
-        password: `UDSM@${form.extension}`,
+        password: password,
+        mustChangePassword: true,
       }
 
       const userRes = await fetch(`${ASTERISK_API}/users`, {
@@ -156,26 +224,25 @@ export function UserManagement() {
 
       if (userRes.ok) {
         setUsersList(prev => [...prev, newUser])
-setSuccess(`User created! Extension: ${form.extension} | Password: UDSM@${form.extension} | Share these credentials with the user.`)      }
+        setSuccess(
+          `✅ User created!\nExtension: ${form.extension}\nPassword: ${password}\n⚠️ User must change password on first login.`
+        )
+      }
 
       setForm({ name: "", email: "", department: "", role: "user", extension: "", remoteAccess: false })
+      setGeneratedPassword("")
       fetchNextExtension()
-
-      setTimeout(() => {
-        setShowModal(false)
-        setSuccess("")
-      }, 2000)
-
+      setTimeout(() => { setShowModal(false); setSuccess("") }, 5000)
     } catch {
-      setError("Cannot connect to Asterisk backend. Check server connection.")
+      setError("Cannot connect to Asterisk backend.")
     }
-
     setLoading(false)
   }
 
-  // ─── Suspend/Activate User ────────────────────────────────────────────────
+  // ─── Suspend/Activate ─────────────────────────────────────────────────────
   const toggleSuspend = async (user: User) => {
     const newStatus = user.status === "active" ? "suspended" : "active"
+    if (!confirm(`${newStatus === "suspended" ? "Suspend" : "Activate"} ${user.name}?`)) return
     try {
       await fetch(`${ASTERISK_API}/users/${user.id}`, {
         method: "PATCH",
@@ -190,10 +257,9 @@ setSuccess(`User created! Extension: ${form.extension} | Password: UDSM@${form.e
     }
   }
 
-  // ─── Delete User & Extension ──────────────────────────────────────────────
+  // ─── Delete User ──────────────────────────────────────────────────────────
   const handleDelete = async (user: User) => {
-    if (!confirm(`Delete ${user.name} (Ext. ${user.extension}) from portal and Asterisk?`)) return
-
+    if (!confirm(`Permanently delete ${user.name} (Ext. ${user.extension}) from portal and Asterisk?\n\nThis cannot be undone.`)) return
     try {
       await fetch(`${ASTERISK_API}/extensions/${user.extension}`, { method: "DELETE" })
       await fetch(`${ASTERISK_API}/users/${user.id}`, { method: "DELETE" })
@@ -284,9 +350,7 @@ setSuccess(`User created! Extension: ${form.extension} | Password: UDSM@${form.e
       <Card className="border border-border">
         <CardContent className="p-0">
           {pageLoading ? (
-            <div className="p-8 text-center text-muted-foreground text-sm">
-              Loading users from server...
-            </div>
+            <div className="p-8 text-center text-muted-foreground text-sm">Loading users from server...</div>
           ) : usersList.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground text-sm">
               No users yet. Click <strong>Add User</strong> to create the first user.
@@ -311,7 +375,14 @@ setSuccess(`User created! Extension: ${form.extension} | Password: UDSM@${form.e
                     <tr key={user.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">
                         <div>
-                          <p className="text-sm font-medium text-foreground">{user.name}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-foreground">{user.name}</p>
+                            {user.mustChangePassword && (
+                              <span className="text-[10px] bg-amber-500/10 text-amber-600 border border-amber-500/30 rounded px-1.5 py-0.5">
+                                Must change pwd
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-muted-foreground">{user.email}</p>
                         </div>
                       </td>
@@ -321,37 +392,35 @@ setSuccess(`User created! Extension: ${form.extension} | Password: UDSM@${form.e
                       </td>
                       <td className="px-4 py-3 text-sm font-mono font-bold text-foreground">{user.extension}</td>
                       <td className="px-4 py-3">
-                        <StatusBadge
-                          label={user.status}
-                          variant={user.status === "active" ? "success" : "danger"}
-                        />
+                        <StatusBadge label={user.status} variant={user.status === "active" ? "success" : "danger"} />
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           <span className={`h-2 w-2 rounded-full ${user.online ? "bg-green-500" : "bg-muted-foreground"}`} />
-                          <span className="text-xs text-muted-foreground">
-                            {user.online ? "Online" : "Offline"}
-                          </span>
+                          <span className="text-xs text-muted-foreground">{user.online ? "Online" : "Offline"}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground">{user.lastLogin}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                          <Button
+                            variant="ghost" size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-primary"
+                            onClick={() => openEdit(user)}
+                            title="Edit user"
+                          >
                             <Edit className="h-4 w-4" />
                           </Button>
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-muted-foreground hover:text-amber-500"
+                            variant="ghost" size="icon"
+                            className={`h-8 w-8 ${user.status === "active" ? "text-muted-foreground hover:text-amber-500" : "text-amber-500 hover:text-green-500"}`}
                             onClick={() => toggleSuspend(user)}
                             title={user.status === "active" ? "Suspend user" : "Activate user"}
                           >
                             <UserX className="h-4 w-4" />
                           </Button>
                           <Button
-                            variant="ghost"
-                            size="icon"
+                            variant="ghost" size="icon"
                             className="h-8 w-8 text-muted-foreground hover:text-destructive"
                             onClick={() => handleDelete(user)}
                             title="Delete user and extension from Asterisk"
@@ -369,7 +438,79 @@ setSuccess(`User created! Extension: ${form.extension} | Password: UDSM@${form.e
         </CardContent>
       </Card>
 
-      {/* Add User Modal */}
+      {/* ── Edit User Modal ─────────────────────────────────────────────────── */}
+      <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit User — Ext. {editingUser?.extension}</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-4">
+            {editError && (
+              <div className="rounded-lg bg-destructive/10 border border-destructive/30 px-3 py-2 text-sm text-destructive">
+                {editError}
+              </div>
+            )}
+            {editSuccess && (
+              <div className="rounded-lg bg-green-500/10 border border-green-500/30 px-3 py-2 text-sm text-green-600">
+                {editSuccess}
+              </div>
+            )}
+            <div className="flex flex-col gap-2">
+              <Label>Full Name *</Label>
+              <Input
+                value={editForm.name}
+                onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="Full name"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Email Address *</Label>
+              <Input
+                type="email"
+                value={editForm.email}
+                onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                placeholder="name@udsm.ac.tz"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Department</Label>
+              <Select value={editForm.department} onValueChange={v => setEditForm(f => ({ ...f, department: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+                <SelectContent>
+                  {departments.map((d) => (<SelectItem key={d} value={d}>{d}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Role</Label>
+              <Select value={editForm.role} onValueChange={v => setEditForm(f => ({ ...f, role: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Extension</Label>
+              <Input value={editingUser?.extension || ""} disabled className="bg-muted font-mono font-bold" />
+              <p className="text-xs text-muted-foreground">Extension cannot be changed</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditModal(false)}>Cancel</Button>
+            <Button
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              onClick={handleSaveEdit}
+              disabled={editLoading}
+            >
+              {editLoading ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Add User Modal ──────────────────────────────────────────────────── */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -382,7 +523,7 @@ setSuccess(`User created! Extension: ${form.extension} | Password: UDSM@${form.e
               </div>
             )}
             {success && (
-              <div className="rounded-lg bg-green-500/10 border border-green-500/30 px-3 py-2 text-sm text-green-600">
+              <div className="rounded-lg bg-green-500/10 border border-green-500/30 px-3 py-2 text-sm text-green-600 whitespace-pre-line">
                 {success}
               </div>
             )}
@@ -414,12 +555,15 @@ setSuccess(`User created! Extension: ${form.extension} | Password: UDSM@${form.e
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Auto-assigned Extension (Chronological)</Label>
-              <Input
-                value={form.extension || "Loading..."}
-                disabled
-                className="bg-muted font-mono font-bold text-lg"
-              />
+              <Label>Auto-assigned Extension</Label>
+              <Input value={form.extension || "Loading..."} disabled className="bg-muted font-mono font-bold text-lg" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Auto-generated Password</Label>
+              <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 px-3 py-2">
+                <p className="text-sm font-mono font-bold text-amber-700">{generatedPassword || "Loading..."}</p>
+                <p className="text-xs text-amber-600 mt-1">⚠️ Share this with the user. They must change it on first login.</p>
+              </div>
             </div>
             <div className="flex items-center justify-between">
               <Label>Enable Remote Access</Label>

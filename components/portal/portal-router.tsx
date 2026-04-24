@@ -15,6 +15,8 @@ import { AuditLogs } from "./audit-logs"
 import { SettingsPage } from "./settings-page"
 import { VoicemailPage } from "./voicemail-page"
 import { useAuth } from "@/lib/auth-context"
+import { MyCallsPage } from "./my-calls-page"
+import { ChangePasswordPage } from "./change-password-page"
 
 // Simple client-side routing since all pages are in one SPA
 import { createContext, useContext } from "react"
@@ -40,6 +42,11 @@ export function PortalRouter() {
   const navigate = (page: string) => setCurrentPage(page)
 
   const renderPage = () => {
+    // Force password change if required
+    if (user?.mustChangePassword) {
+      return <ChangePasswordPage onComplete={() => window.location.reload()} />
+    }
+
     if (user?.role === "admin") {
       switch (currentPage) {
         case "/dashboard": return <AdminDashboard />
@@ -58,7 +65,7 @@ export function PortalRouter() {
       switch (currentPage) {
         case "/dashboard": return <UserDashboard />
         case "/dashboard/directory": return <LiveDirectory />
-        case "/dashboard/my-calls": return <CallRecords />
+        case "/dashboard/my-calls": return <MyCallsPage />
         case "/dashboard/voicemail": return <VoicemailPage />
         case "/dashboard/settings": return <SettingsPage />
         default: return <UserDashboard />

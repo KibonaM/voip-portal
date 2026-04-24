@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { StatusBadge } from "./status-badge"
-import { users, fetchLiveEndpoints } from "@/lib/mock-data"
+import { fetchLiveEndpoints, ASTERISK_API } from "@/lib/mock-data"
 
 type DirectoryEntry = {
   name: string
@@ -27,34 +27,43 @@ const presenceVariant = (presence: string) => {
 }
 
 export function LiveDirectory() {
-  const [search, setSearch] = useState("")
-  const [directory, setDirectory] = useState<DirectoryEntry[]>([])
+  const [search, setSearch]           = useState("")
+  const [directory, setDirectory]     = useState<DirectoryEntry[]>([])
   const [lastRefresh, setLastRefresh] = useState("—")
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading]         = useState(true)
 
   const fetchDirectory = async () => {
     setLoading(true)
+
+    // Fetch users from server storage
+    let serverUsers: any[] = []
+    try {
+      const usersRes = await fetch(`${ASTERISK_API}/users`)
+      serverUsers = await usersRes.json()
+    } catch { }
+
+    // Fetch live endpoints from Asterisk
     const liveData = await fetchLiveEndpoints()
 
     if (liveData) {
       const merged: DirectoryEntry[] = liveData.map((ep: any) => {
-        const matchedUser = users.find(u => u.extension === ep.resource)
+        const matchedUser = serverUsers.find((u: any) => u.extension === ep.resource)
         return {
-          name: matchedUser?.name ?? `Extension ${ep.resource}`,
-          extension: ep.resource,
+          name:       matchedUser?.name       ?? `Extension ${ep.resource}`,
+          extension:  ep.resource,
           department: matchedUser?.department ?? "—",
-          presence: ep.state === "online" ? "available" : "offline",
+          presence:   ep.state === "online" ? "available" : "offline",
         }
       })
       setDirectory(merged)
     } else {
-      // Fallback to mock users if server offline
+      // Fallback — show server users as offline if Asterisk unreachable
       setDirectory(
-        users.map(u => ({
-          name: u.name,
-          extension: u.extension,
+        serverUsers.map((u: any) => ({
+          name:       u.name,
+          extension:  u.extension,
           department: u.department,
-          presence: "offline",
+          presence:   "offline",
         }))
       )
     }
@@ -139,6 +148,10 @@ export function LiveDirectory() {
           {loading ? (
             <div className="p-8 text-center text-muted-foreground text-sm">
               Loading live directory from Asterisk...
+            </div>
+          ) : directory.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground text-sm">
+              No users found. Add users in the Users section first.
             </div>
           ) : (
             <div className="overflow-x-auto">

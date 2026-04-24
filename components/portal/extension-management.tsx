@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { StatusBadge } from "./status-badge"
-import { users } from "@/lib/mock-data"
 import { fetchLiveEndpoints, ASTERISK_API } from "@/lib/mock-data"
 import {
   Dialog,
@@ -35,14 +34,20 @@ export function ExtensionManagement() {
   const [lastRefresh, setLastRefresh] = useState("—")
 
   // ─── Fetch live endpoints from Asterisk ──────────────────────────────────
-  const fetchEndpoints = async () => {
+const fetchEndpoints = async () => {
     setLoading(true)
-    const liveData = await fetchLiveEndpoints()
 
+    // Fetch users from server
+    let serverUsers: any[] = []
+    try {
+      const usersRes = await fetch(`${ASTERISK_API}/users`)
+      serverUsers = await usersRes.json()
+    } catch { }
+
+    const liveData = await fetchLiveEndpoints()
     if (liveData) {
-      // Merge live Asterisk data with our user info
       const merged: LiveEndpoint[] = liveData.map((ep: any) => {
-        const matchedUser = users.find(u => u.extension === ep.resource)
+        const matchedUser = serverUsers.find((u: any) => u.extension === ep.resource)
         return {
           extension: ep.resource,
           assignedUser: matchedUser?.name ?? "Unassigned",
