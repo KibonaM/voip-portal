@@ -6,7 +6,12 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { StatusBadge } from "./status-badge"
-import { fetchLiveEndpoints, ASTERISK_API } from "@/lib/mock-data"
+import {
+  fetchLiveEndpoints,
+  ASTERISK_API,
+  apiUrl,
+  BridgePaths,
+} from "@/lib/mock-data"
 
 type DirectoryEntry = {
   name: string
@@ -38,32 +43,36 @@ export function LiveDirectory() {
     // Fetch users from server storage
     let serverUsers: any[] = []
     try {
-      const usersRes = await fetch(`${ASTERISK_API}/users`)
-      serverUsers = await usersRes.json()
+      const usersRes = await fetch(apiUrl(ASTERISK_API, BridgePaths.users))
+      const raw = await usersRes.json()
+      serverUsers = Array.isArray(raw) ? raw : []
     } catch { }
 
-    // Fetch live endpoints from Asterisk
     const liveData = await fetchLiveEndpoints()
+    const liveList = Array.isArray(liveData) ? liveData : []
+    const extOf = (ep: any) => String(ep?.resource ?? ep?.extension ?? "").trim()
 
-    if (liveData) {
-      const merged: DirectoryEntry[] = liveData.map((ep: any) => {
-        const matchedUser = serverUsers.find((u: any) => u.extension === ep.resource)
-        return {
-          name:       matchedUser?.name       ?? `Extension ${ep.resource}`,
-          extension:  ep.resource,
-          department: matchedUser?.department ?? "—",
-          presence:   ep.state === "online" ? "available" : "offline",
-        }
-      })
+    if (liveList.length > 0) {
+      const merged: DirectoryEntry[] = liveList
+        .map((ep: any) => {
+          const ext = extOf(ep)
+          const matchedUser = serverUsers.find((u: any) => String(u.extension) === ext)
+          return {
+            name: matchedUser?.name ?? (ext ? `Extension ${ext}` : "Unknown"),
+            extension: ext,
+            department: matchedUser?.department ?? "—",
+            presence: ep.state === "online" ? "available" : "offline",
+          }
+        })
+        .filter((e) => e.extension.length > 0)
       setDirectory(merged)
     } else {
-      // Fallback — show server users as offline if Asterisk unreachable
       setDirectory(
         serverUsers.map((u: any) => ({
-          name:       u.name,
-          extension:  u.extension,
+          name: u.name,
+          extension: String(u.extension ?? ""),
           department: u.department,
-          presence:   "offline",
+          presence: "offline",
         }))
       )
     }

@@ -7,7 +7,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { StatusBadge } from "./status-badge"
-import { fetchLiveEndpoints, ASTERISK_API } from "@/lib/mock-data"
+import {
+  fetchLiveEndpoints,
+  ASTERISK_API,
+  apiUrl,
+  BridgePaths,
+} from "@/lib/mock-data"
 import {
   Dialog,
   DialogContent,
@@ -40,27 +45,53 @@ const fetchEndpoints = async () => {
     // Fetch users from server
     let serverUsers: any[] = []
     try {
-      const usersRes = await fetch(`${ASTERISK_API}/users`)
-      serverUsers = await usersRes.json()
+      const usersRes = await fetch(apiUrl(ASTERISK_API, BridgePaths.users))
+      const rawUsers = await usersRes.json()
+      serverUsers = Array.isArray(rawUsers) ? rawUsers : []
     } catch { }
 
     const liveData = await fetchLiveEndpoints()
-    if (liveData) {
-      const merged: LiveEndpoint[] = liveData.map((ep: any) => {
-        const matchedUser = serverUsers.find((u: any) => u.extension === ep.resource)
-        return {
-          extension: ep.resource,
-          assignedUser: matchedUser?.name ?? "Unassigned",
-          department: matchedUser?.department ?? "—",
-          registrationStatus: ep.state === "online" ? "registered" : "unregistered",
+    const liveList = Array.isArray(liveData) ? liveData : []
+
+    const extKey = (ep: any) => String(ep?.resource ?? ep?.extension ?? "").trim()
+
+    let merged: LiveEndpoint[] = []
+    if (liveList.length > 0) {
+      merged = liveList
+        .map((ep: any) => {
+          const ext = extKey(ep)
+          const matchedUser = serverUsers.find(
+            (u: any) => String(u.extension) === ext
+          )
+          return {
+            extension: ext,
+            assignedUser: matchedUser?.name ?? "Unassigned",
+            department: matchedUser?.department ?? "—",
+            registrationStatus:
+              ep.state === "online" ? "registered" : "unregistered",
+            network: "LAN",
+            encryption: "TLS/SRTP",
+            lastIp: "—",
+            state: ep.state ?? "offline",
+          }
+        })
+        .filter((row) => row.extension.length > 0)
+    } else if (serverUsers.length > 0) {
+      merged = serverUsers
+        .filter((u: any) => u.extension != null && String(u.extension).trim() !== "")
+        .map((u: any) => ({
+          extension: String(u.extension),
+          assignedUser: u.name ?? "—",
+          department: u.department ?? "—",
+          registrationStatus: "unregistered",
           network: "LAN",
           encryption: "TLS/SRTP",
           lastIp: "—",
-          state: ep.state,
-        }
-      })
-      setEndpoints(merged)
+          state: "offline",
+        }))
     }
+
+    setEndpoints(merged)
 
     setLastRefresh(new Date().toLocaleTimeString())
     setLoading(false)
@@ -76,7 +107,7 @@ const fetchEndpoints = async () => {
   const handleDelete = async (ext: string) => {
     if (!confirm(`Delete extension ${ext} from Asterisk?`)) return
     try {
-      const res = await fetch(`${ASTERISK_API}/extensions/${ext}`, {
+      const res = await fetch(apiUrl(ASTERISK_API, BridgePaths.extensions, ext), {
         method: "DELETE",
       })
       const data = await res.json()

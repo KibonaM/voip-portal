@@ -9,7 +9,13 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAuth } from "@/lib/auth-context"
-import { ASTERISK_API } from "@/lib/mock-data"
+import {
+  ASTERISK_API,
+  ASTERISK_SIP_PORT,
+  ASTERISK_SIP_SERVER,
+  apiUrl,
+  BridgePaths,
+} from "@/lib/mock-data"
 
 type PasswordRule = {
   label: string
@@ -57,11 +63,19 @@ export function SettingsPage() {
 
     setPwdLoading(true)
     try {
-      const res = await fetch(`${ASTERISK_API}/users/${user?.id}/change-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentPassword, newPassword }),
-      })
+      const res = await fetch(
+        apiUrl(
+          ASTERISK_API,
+          BridgePaths.users,
+          String(user?.id ?? ""),
+          "change-password"
+        ),
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ currentPassword, newPassword }),
+        },
+      )
 
       const data = await res.json()
       if (!res.ok) {
@@ -196,7 +210,7 @@ export function SettingsPage() {
               <div className="flex flex-col gap-1 text-xs text-muted-foreground">
                 <div className="flex justify-between">
                   <span>Server:</span>
-                  <span className="font-mono">192.168.1.13:5060</span>
+                  <span className="font-mono">{ASTERISK_SIP_SERVER}:{ASTERISK_SIP_PORT}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Username:</span>

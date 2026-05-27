@@ -22,6 +22,8 @@ import {
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth-context"
 import { Button } from "@/components/ui/button"
+import { useAsteriskHealth } from "@/hooks/use-asterisk-health"
+import { fetchServerInfo } from "@/lib/mock-data"
 
 const adminLinks = [
   { href: "/dashboard",                label: "Dashboard",    icon: LayoutDashboard },
@@ -44,28 +46,43 @@ const userLinks = [
   { href: "/dashboard/settings",     label: "Settings",  icon: Settings },
 ]
 
-// ─── Live PBX Status Component ───────────────────────────────────────────────
+// ─── Live PBX Status (same bridge probe as navbar / monitoring / dashboard) ─
 function PbxStatus() {
-  const [online, setOnline]   = useState(false)
+  const { status: health } = useAsteriskHealth(10000)
   const [version, setVersion] = useState("—")
 
   useEffect(() => {
-    const check = async () => {
-      try {
-        const res = await fetch("http://192.168.1.13:3001/api/info")
-        const data = await res.json()
-        if (data?.system?.version) {
-          setVersion(data.system.version)
-          setOnline(true)
-        }
-      } catch {
-        setOnline(false)
-      }
+    if (health.kind !== "online" && health.kind !== "degraded") {
+      setVersion("—")
+      return
     }
-    check()
-    const interval = setInterval(check, 10000)
-    return () => clearInterval(interval)
-  }, [])
+    let cancelled = false
+    ;(async () => {
+      const info = await fetchServerInfo()
+      if (cancelled) return
+      const v = info?.system?.version
+      setVersion(v != null && String(v).trim() !== "" ? String(v) : "—")
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [health.kind])
+
+  const statusLabel =
+    health.kind === "online"
+      ? "Online"
+      : health.kind === "degraded"
+        ? "Degraded"
+        : health.kind === "checking"
+          ? "…"
+          : "Offline"
+
+  const dotClass =
+    health.kind === "online"
+      ? "bg-green-500"
+      : health.kind === "degraded" || health.kind === "checking"
+        ? "bg-amber-500"
+        : "bg-red-500"
 
   return (
     <div className="mb-2 flex items-center gap-2 px-3 py-2">
@@ -73,8 +90,8 @@ function PbxStatus() {
       <div className="text-xs text-sidebar-foreground/50">
         <div className="font-medium">Asterisk {version}</div>
         <div className="flex items-center gap-1 mt-0.5">
-          <span className={`h-1.5 w-1.5 rounded-full ${online ? "bg-green-500" : "bg-red-500"}`} />
-          <span>{online ? "Online" : "Offline"}</span>
+          <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", dotClass)} />
+          <span>{statusLabel}</span>
         </div>
       </div>
     </div>

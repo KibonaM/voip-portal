@@ -106,7 +106,6 @@ import {
   Voicemail,
   ChevronLeft,
   ChevronRight,
-  MonitorSmartphone,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -171,17 +170,6 @@ function SidebarNavClient({ currentPage, navigate }: { currentPage: string; navi
       </nav>
 
       <div className="border-t border-sidebar-border p-2">
-        {!collapsed && (
-          <div className="mb-2 flex items-center gap-2 px-3 py-2">
-            <MonitorSmartphone className="h-4 w-4 text-sidebar-foreground/50" />
-            <div className="text-xs text-sidebar-foreground/50">
-              <p>Asterisk PBX</p>
-              <p className="flex items-center gap-1">
-                Status: <span className="inline-block h-2 w-2 rounded-full bg-success" /> Online
-              </p>
-            </div>
-          </div>
-        )}
         <Button
           variant="ghost"
           size="sm"

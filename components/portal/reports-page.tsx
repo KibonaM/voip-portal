@@ -11,7 +11,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
 } from "recharts"
-import { ASTERISK_API } from "@/lib/mock-data"
+import { ASTERISK_API, apiUrl, BridgePaths } from "@/lib/mock-data"
 
 const PIE_COLORS = ["var(--primary)", "#10B981", "#F59E0B", "#EF4444"]
 
@@ -29,17 +29,17 @@ export function ReportsPage() {
   // ─── Fetch all live stats ─────────────────────────────────────────────────
   const fetchStats = async () => {
     try {
-      const epRes = await fetch(`${ASTERISK_API}/endpoints`)
+      const epRes = await fetch(apiUrl(ASTERISK_API, BridgePaths.endpoints))
       const endpoints = await epRes.json()
       setTotalExt(endpoints.length)
       setRegisteredExt(endpoints.filter((e: any) => e.state === "online").length)
 
-      const chRes = await fetch(`${ASTERISK_API}/channels`)
+      const chRes = await fetch(apiUrl(ASTERISK_API, BridgePaths.channels))
       const channels = await chRes.json()
       setActiveCalls(channels.length)
 
       // Fetch real CDR
-      const cdrRes = await fetch(`${ASTERISK_API}/realcdr`)
+      const cdrRes = await fetch(apiUrl(ASTERISK_API, BridgePaths.realcdr))
       const cdrData = await cdrRes.json()
       if (Array.isArray(cdrData)) {
         setCdrRecords(cdrData)

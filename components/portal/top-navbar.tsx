@@ -14,7 +14,13 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/lib/auth-context"
-import { ASTERISK_API, fetchLiveEndpoints } from "@/lib/mock-data"
+import {
+  ASTERISK_API,
+  apiUrl,
+  BridgePaths,
+  fetchLiveEndpoints,
+} from "@/lib/mock-data"
+import { AsteriskConnectionIndicator } from "./asterisk-connection-indicator"
 
 type Notification = {
   id: string
@@ -38,8 +44,10 @@ export function TopNavbar() {
     try {
       // Check unregistered extensions
       const endpoints = await fetchLiveEndpoints()
-      if (endpoints) {
-        const unregistered = endpoints.filter((e: any) => e.state !== "online").length
+      if (Array.isArray(endpoints)) {
+        const unregistered = endpoints.filter(
+          (e: any) => e.state !== "online"
+        ).length
         if (unregistered > 0) {
           notifs.push({
             id: "unreg",
@@ -52,7 +60,7 @@ export function TopNavbar() {
       }
 
       // Check active calls
-      const chRes = await fetch(`${ASTERISK_API}/channels`)
+      const chRes = await fetch(apiUrl(ASTERISK_API, BridgePaths.channels))
       const channels = await chRes.json()
       if (Array.isArray(channels) && channels.length > 0) {
         notifs.push({
@@ -65,7 +73,7 @@ export function TopNavbar() {
       }
 
       // Check system stats
-      const sysRes = await fetch(`${ASTERISK_API}/system`)
+      const sysRes = await fetch(apiUrl(ASTERISK_API, BridgePaths.system))
       const sysData = await sysRes.json()
       if (sysData?.cpu > 80) {
         notifs.push({
@@ -87,7 +95,7 @@ export function TopNavbar() {
       }
 
       // Check audit logs for recent actions
-      const auditRes = await fetch(`${ASTERISK_API}/audit`)
+      const auditRes = await fetch(apiUrl(ASTERISK_API, BridgePaths.audit))
       const auditData = await auditRes.json()
       if (Array.isArray(auditData) && auditData.length > 0) {
         const latest = auditData[0]
@@ -145,6 +153,7 @@ export function TopNavbar() {
       </div>
 
       <div className="ml-auto flex items-center gap-4">
+        <AsteriskConnectionIndicator variant="compact" pollIntervalMs={20000} />
         <div className="relative hidden md:block">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
